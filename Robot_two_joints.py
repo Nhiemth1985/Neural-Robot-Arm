@@ -7,14 +7,13 @@
 ##############################
 
 import math
-import matplotlib.pyplot as plt
 import random
 import numpy as np
 import pandas as pd
 
 
-# Two arm robot model
-class robot_two_arms(object):
+# Two joint robot model
+class robot_two_joint(object):
     def __init__(self, l1 = 0.5, l2 = 0.5):
         self.limits = ((0,math.pi/2),(0,math.pi/2))
         self.l1 = l1
@@ -44,7 +43,12 @@ class robot_two_arms(object):
     def inverseKinematicsNN(self, x, y):
         pass
 
+    def loadNNModel(self, architecture, weights):
+        pass
+
     def checkLimit(self, theta, limits):
+
+        theta = self.checkAngle(theta)
 
         if theta > max(limits):
             theta = max(limits)
@@ -52,38 +56,11 @@ class robot_two_arms(object):
             theta = min(limits)
 
         return theta
+
+    def checkAngle(self, theta):
+
+        theta = theta % (2*math.pi)
+
+        return theta
         
 
-if __name__ == "__main__":
-
-    # Create robot model
-    robot = robot_two_arms()
-
-    # Generate and store sample points
-    samples = 1000
-    data = np.zeros((samples,4))
-
-    random.seed(1337)
-    for i in range(samples):
-        theta1 = random.random()*math.pi/2
-        theta2 = random.random()*math.pi/2
-
-        x, y = robot.forwardKinematics(theta1, theta2)
-        data[i,:] = (theta1, theta2, x, y)
-        
-
-    # Plot the results
-    x = data[:,2]
-    y = data[:,3]
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.scatter(x,y)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.grid(True)
-    plt.show()
-
-    # Save the results into a csv file
-    df = pd.DataFrame(data,columns=["theta1","theta2","x","y"])
-    df.to_pickle("sample_data/sample_points_2arm.pkl")
