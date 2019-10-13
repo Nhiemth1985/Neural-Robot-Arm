@@ -2,7 +2,7 @@
 ##############################
 #                            #
 # Created by: Daniel Aguirre #
-# Date: 06/10/2019           #
+# Date: 13/10/2019           #
 #                            #
 ##############################
 
@@ -15,35 +15,37 @@ import pandas as pd
 import numpy as np
 import keras
 import matplotlib.pyplot as plt
-import Robot_two_joints
+import Robot_n_joints
+from sklearn.model_selection import train_test_split
 
 # Load data
-def load_data():
+def load_data(n_links):
+    
     df_train = pd.read_pickle("sample_data/sample_points_2arm.pkl")
-    x_train = df_train[["x","y"]]
-    y_train = df_train[["theta1","theta2"]]
+    x = df_train.iloc[:,-2:] # Thetas
+    y = df_train.iloc[:,0:-2] # X and Y    
+    x_train, x_vali, y_train, y_vali = train_test_split(x, y, test_size=0.2, random_state=1)
 
-    df_test = pd.read_pickle("sample_data/sample_points_2arm_test.pkl")
-    x_test = df_test[["x","y"]]
-    y_test = df_test[["theta1","theta2"]]
-
-    return x_train, y_train, x_test, y_test
+    return x_train, y_train, x_vali, y_vali
+    
 
 # Create the NN model
-def create_model():
+def create_model(output_dim):
+
     model = keras.Sequential()
-    model.add(keras.layers.Dense(50, use_bias=True, activation="relu",input_dim=2))
+    model.add(keras.layers.Dense(100, use_bias=True, activation="relu",input_dim=2))
     model.add(keras.layers.Dense(100, use_bias=True, activation="relu"))
     model.add(keras.layers.Dense(100, use_bias=True, activation="relu"))
-    model.add(keras.layers.Dense(2, use_bias=True, activation="linear"))
+    model.add(keras.layers.Dense(output_dim, use_bias=True, activation="linear"))
 
     model.compile(optimizer="adam",
                   loss='mean_absolute_error',
                   metrics=['accuracy'])
     return model
 
-def train_model(model, x_train, y_train, x_test, y_test):
+def train_model(model, x_train, y_train, x_vali, y_vali):
 
+    print(x_train)
     # Train the model
     model.fit(x_train, y_train, epochs=5, batch_size=32)
 
@@ -56,24 +58,25 @@ def train_model(model, x_train, y_train, x_test, y_test):
     with open("architectures/model.json", "w") as json_file:
         json_file.write(model_json)
 
-
     # Validation: Random points
-    loss_and_metrics = model.evaluate(x_test, y_test, batch_size=128)
+    loss_and_metrics = model.evaluate(x_vali, y_vali, batch_size=128)
 
-    print("----------------------------\n")
+    print("----------------------------")
     print("\n      Loss_and_metrics      ")
     print(loss_and_metrics)
     print("----------------------------\n")
 
-    y_predic = model.predict(x_test, batch_size=128)
-    diff = y_predic - y_test
+    y_predic = model.predict(x_vali, batch_size=128)
+    diff = y_predic - y_vali
 
-    #print("----- Max Diff (degree)-----")
+    #print("----------------------------")
+    #print(" Max Diff (degree) ")
     #print(diff.max()*180/math.pi)
     #print(diff.min()*180/math.pi)
+    #print("----------------------------")
 
 
-def validate_model_circle(model, robot):
+def test_model_circle(model, robot):
     
     # Generate the points
     point_num = 100
@@ -94,10 +97,14 @@ def validate_model_circle(model, robot):
 
     # Get the XY position with FK
     data_predic = np.zeros((len(y_predic),2))
+    print(y_predic)
     for i in range(len(y_predic)):
-        theta1 = y_predic[i,0]
-        theta2 = y_predic[i,1]
-        xpos, ypos = robot.forwardKinematics(theta1, theta2)
+
+        thetas = []
+        for j in range(robot.n_links):
+            thetas.append(y_predic[i,j]) 
+        
+        xpos, ypos = robot.forwardKinematics(thetas)
         data_predic[i,:] = [xpos,ypos]
         
     # Plot the results
@@ -108,7 +115,7 @@ def validate_model_circle(model, robot):
     ypos_predic = data_predic[:,1]
 
     fig = plt.figure()
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot(1,1,1)
     ax.scatter(xpos_target, ypos_target)
     ax.scatter(xpos_predic, ypos_predic)
     #ax.set_xlim(0, 1)
@@ -118,67 +125,94 @@ def validate_model_circle(model, robot):
     plt.title("Robots TCP")
     plt.legend(("Target","Predicted"))
     ax.grid(True)
+    plt.show(block = False)
+
+    # Plot the difference
+    diff_xpos = xpos_target - xpos_predic
+    diff_ypos = ypos_target - ypos_predic
+
+    num_bins = 5
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2,1,1)
+    ax1.hist(diff_xpos, num_bins, facecolor='blue')
+    ax1.legend(["Diff in x"],loc="upper center")
+    
+    ax2 = fig.add_subplot(2,1,2)
+    ax2.hist(diff_ypos, num_bins, facecolor='orange')
+    ax2.legend(["Diff in y"],loc="upper center")
+
+    plt.xlabel("Difference (Target - Predicted) (m)")
     plt.show()
 
 
 def getSampleData(robot, sample):    
 
     # Generate sample points    
-    data = np.zeros((samples,4))
+    data = np.zeros((samples,(robot.n_links + 2)))
 
     for i in range(samples):
-        theta1 = random.random()*math.pi/2
-        theta2 = random.random()*math.pi/2
+        thetas = []
+        for j in range(robot.n_links):
+            thetas.append(random.random()*math.pi/2)
 
-        x, y = robot.forwardKinematics(theta1, theta2)
-        data[i,:] = (theta1, theta2, x, y)
+        x, y = robot.forwardKinematics(thetas)
+        data[i,:] = (thetas + [x] + [y])
 
     # Save the results into a csv file
-    df = pd.DataFrame(data,columns=["theta1","theta2","x","y"])
-    df.to_pickle("sample_data/sample_points_2arm.pkl")
+    column_names = []
+    for i in range(robot.n_links):
+        column_names.append("theta" + str(i+1))
 
+    
+    column_names = column_names + ["x"] + ["y"]
+    print(column_names)
+    df = pd.DataFrame(data,columns=column_names)
+    df.to_pickle("sample_data/sample_points_2arm.pkl")
+    
     return data
 
 
 def plotSampleData(data):
     # Plot the results
-    x = data[:,2]
-    y = data[:,3]
+    x = data[:,-2]
+    y = data[:,-1]
 
     fig = plt.figure()
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot(1,1,1)
     ax.scatter(x,y)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    #ax.set_xlim(0, 1)
+    #ax.set_ylim(0, 1)
     plt.xlabel("x position (m)")
     plt.ylabel("y position (m)")
     plt.title("Robots workspace")
     ax.grid(True)
-    plt.show()
+    plt.show(block = False)
 
 if __name__ == "__main__":
 
-    # Generate data
-    robot = Robot_two_joints.robot_two_joint()
-    samples = 2000
+    # Define robot model to use    
+    robot = Robot_n_joints.robot_n_joints(2)
 
+    # Generate data
+    samples = 8000
     data = getSampleData(robot, samples)
     plotSampleData(data)
     
-
     # Load data
-    x_train, y_train, x_test, y_test = load_data()
+    x_train, y_train, x_vali, y_vali = load_data(robot.n_links)
 
     # Create the NN model
-    model = create_model()
+    model = create_model(robot.n_links)
     model.summary()
 
     # Train the model
-    train_model(model, x_train, y_train, x_test, y_test)
+    train_model(model, x_train, y_train, x_vali, y_vali)
+
+    # Validate the model with a profile
+    test_model_circle(model, robot)
 
     
-    # Validate the model with a profile
-    validate_model_circle(model, robot)
 
     
 
