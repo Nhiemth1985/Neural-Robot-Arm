@@ -3,9 +3,7 @@ A proof of concept to solve a robots inverse kinematics using neural networks.
 
 <p align="middle">
   <img src="/images/Predicted TCP results.png" alt="Predicted TCP results" width=300>
-
-  <img src="/images/Differences target and predicted.png" alt="Differences between the target and predicted" width=300>'
-
+  <img src="/images/Differences target and predicted.png" alt="Differences between the target and predicted" width=300>
 </p>
 
 
